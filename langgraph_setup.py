@@ -3,8 +3,9 @@ from langchain_core.tools import tool
 from jira_client import JiraClient
 from langchain_core.messages import ToolCall, ToolMessage as ToolResult
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.graph import StateGraph, START, END
+from langchain_core.messages import AIMessage, ToolMessage
 from dotenv import load_dotenv
 import os
 
@@ -27,24 +28,24 @@ class JQLAnalysisState(TypedDict):
 jira_client = JiraClient()
 
 @tool
-def get_all_projects():
-    '''Retorna la lista de proyectos activos'''
-    return jira_client.get_all_projects()
+def get_project_name_match():
+    '''Encuentra la mejor aproximación para el nombre de un proyecto'''
+    return jira_client.get_project_name_match()
 
 @tool
-def get_all_issue_types():
-    '''Retorna los tipos de issue que existen'''
-    return jira_client.get_all_issue_types()
+def get_issue_type_name_match():
+    '''Encuentra la mejor aproximación para un tipo de issue'''
+    return jira_client.get_issue_type_name_match()
 
 @tool
-def get_celula_dropdown_options():
-    '''Retorna las opciones de valor para célula'''
-    return jira_client.get_celula_dropdown_options()
+def get_celula_dropdown_name():
+    '''Encuentra la mejor aproximación para el nombre de una célula'''
+    return jira_client._get_celula_dropdown_options()
 
 JIRA_TOOLS = [
-        get_all_projects,
-        get_all_issue_types,
-        get_celula_dropdown_options
+        get_project_name_match,
+        get_issue_type_name_match,
+        get_celula_dropdown_name
     ]
 
 api_key = os.getenv("LLM_API_KEY")
@@ -67,55 +68,113 @@ def agent_node(state: JQLAnalysisState) -> JQLAnalysisState:
     history_exists = "TRUE" if state.get('tool_results') else "FALSE"
     
     # 2. Format the tool history for the LLM
-    tool_history = [
-        ("user", f"Tool Results: {r.content}")
-        for r in state.get('tool_results', [])
-    ]
+    tool_calls = state.get('tool_calls', []) # assuming you store these after the first turn
+    tool_results = state.get('tool_results', [])
+
+    history_messages = []
+
+    # We must iterate over the successful tool calls and provide the result
+    for call in tool_calls:
+        # 1. Assistant's action message (The tool call)
+        history_messages.append(AIMessage(content="", tool_calls=[call])) 
+        
+        # 2. Tool's observation message (The result of the action)
+        # Find the result that matches this tool call ID
+        result = next((r for r in tool_results if r.tool_call_id == call.id), None)
+        
+        if result:
+            history_messages.append(ToolMessage(
+                content=result.content, 
+                tool_call_id=call.id,
+                # name=call.name # Optional, but recommended for clarity
+            ))
+
+    tool_history = format_tool_history(tool_results, tool_calls)
 
     # --- System Prompt Definition ---
-    system_prompt = (
-        "You are a highly capable JQL query generator. Your sole mission is to produce a single, valid JQL string that directly answers the user's request. The JQL field for 'Celula' is always written as '\"Celula[Dropdown]\"'.\n"
-        "\n"
-        "**CRITICAL LOGIC:**\n"
-        "**- IF history_exists is FALSE, you MUST respond ONLY with tool calls.**\n"
-        "**- IF history_exists is TRUE, you MUST respond ONLY with the final JQL.**\n"
-        "\n"
-        "**PHASE 1: DATA GATHERING & VALIDATION (Use Tools)**\n"
-        "1. MANDATORY VALIDATION: Before generating any JQL, you **MUST** use the provided tools to validate every entity (Project names, Issue Types, Celula values) mentioned in the user's request. Perform all required checks in the minimum number of tool calls possible.\n"
-        "\n"
-        "**PHASE 2: FINAL JQL GENERATION (Stop Condition)**\n"
-        "2. CRITICAL STOP CONDITION: If history_exists is TRUE, immediately cease all tool calls. Construct the final JQL based on the validated data and the user's request.\n"
-        "3. OUTPUT FORMAT: Your final response must contain ONLY the valid JQL string and nothing else (no markdown, commentary, or leading phrases). The JQL must be the very first and last thing you output.\n"
-    )
+    # system_prompt = '''
+    #     Tu objetivo es entregar una consulta en JQL que pueda implementar un filtro y generar una lista de issues de Jira que cumplan con
+    #     alguna condición.
+
+    #     Para lograr esto, primero debes entender que es lo que busca el usuario, y validar ciertas entidades de Jira para obtener la consulta. Para
+    #     esto puedes usar las herramientas que tienes disponibles.
+
+    #     En particular, considera que la solicitud del usuario puede mencionar lo siguiente:
+    #     - 'Proyecto' o similar, que se refiere al campo 'Project' de Jira, y que puedes validar con la herramienta get_project_name_match().
+    #     - 'Equipo', 'célula' o similar, que se refiere al campo 'Celula[Dropdown]', y hace referencia al equipo encargado. Lo puedes validar con get_celula_dropdown_name().
+    #     - 'Tipo', 'tipo de issue', 'tipo de ticket', se refiere al campo 'type' de Jira. Para validar usa get_issue_type_name_match(). Ten en cuenta que en
+    #     la conversación esta entidad puede ir implícita (por ejemplo, el usuario puede decir 'todos los incidentes resueltos', en vez de 'todos los issues de tipo incidente').
+    #     - Preguntas por fechas. Esas son fundamentales, y muchas veces relativas (últimos 3 meses, desde el inicio de mes, etc). Para esto puedes usar expresiones tales como startOfMonth.
+
+    #     Tu mecanismo de respuesta es el siguiente:
+    #     1. Determina las posibles entidades a las que se refiere el usuario (proyectos, equipos, tipos de issue, etc).
+    #     2. Usa las herramientas para identificar las instancias exactas, o al menos aproximadas (por ejemplo, el proyecto con un nombre similar).
+    #     3. Define si hay restricciones por fecha.
+    #     4. Generar un JQL que capture esta necesidad.
+
+    #     La idea es que puedas hacerlo con la menor cantidad de llamadas posibles, pero manteniendo la coherencia.
+
+    #     Ejemplo 1: 'buscar todos los issues resueltos por el Equipo de Web Privada desde el 1 de julio de este año'.
+    #     "acción": usar herramienta "get_celula_dropdown_name{{}}()"
+    #     "resultado":  "['name'= 'Web Privada', 'confidence': 100.0]"
+    #     "acción": Contamos con el nombre del equipo. Dado que también conocemos las fechas y no hay más entidades involucradas podemos terminar.
+    #     "resultado": JQL 'CelulaCelula[Dropdown] = 'Equipo SVA' and resolved > '2025-07-01'
+
+    #     "Ejemplo 2: "buscar todos las incidencias resueltas en el proyecto SVA durante este mes'    
+    #     "acción": usar herramienta get_project_name_match {{}}() y get_issue_type_name_match {{}}()
+    #     "resultado": Proyecto ['key' = 'WPRI', 'name'= 'Web Privada', 'confidence': 100.0] y Tipo ['id' = 1929, 'name'= 'Incidente', 'confidence': 100.0]
+    #     "acción": identificamos el proyecto y el tipo de issue. Además sabemos que debemos usar una consulta relativa desde principios del mes.
+    #     "resultado": JQL 'Project = 'Equipo SVA' AND type = 'Incidente' and resolved > startOfMonth() ORDER BY resolved'
+    # '''
+
+    system_prompt = '''
+    You are a highly capable **JQL query generator** for Jira. Your **sole output** must be a valid JQL string or a function call.
+
+    ---
+    ### 🎯 CORE DIRECTIVE
+    Your output must be **one of two things**:
+    1.  **A Tool Call:** If project, issue type, or team names need validation.
+    2.  **The Final JQL String:** If all necessary data is validated OR no more filters are needed.
+
+    Your final JQL output **MUST NOT** contain markdown, commentary, or extra text.
+
+    ### ⚙️ FIELD MAPPING & RULES
+    * **Team/Celula:** Use `"Celula[Dropdown]"`. Validate with `get_celula_dropdown_name()`.
+    * **Project:** Use `project`. Validate with `get_project_name_match()`.
+    * **Issue Type:** Use `type`. Validate with `get_issue_type_name_match()`.
+    * **Resolved/Solved:** Always add `resolution IS NOT EMPTY`.
+    * **Default Project:** If the user doesn't specify a project, default to `project IN ('SW', 'LA')`.
+
+    ---
+    ### ✅ WORKFLOW EXAMPLES (Teaching the Loop Logic)
+
+    **EXAMPLE 1: Requires Tool Call (PHASE 1)**
+    **USER:** Find all resolved incidents from Team Beta.
+    **ASSISTANT:** get_issue_type_name_match() AND get_celula_dropdown_name()
+
+    **TOOL RESULTS:** [Type: {'name': 'Incident', 'confidence': 100.0}, Team: {'name': 'Team Beta', 'confidence': 95.0}]
+
+    **ASSISTANT (PHASE 2: Final JQL Generation):**
+    Project IN ('SW', 'LA') AND type = Incident AND Celula[Dropdown] = 'Team Beta' AND resolution IS NOT EMPTY
+
+
+    **EXAMPLE 2: Requires Date Logic (No Tools Needed)**
+    **USER:** All issues from project 'SW' created in the last 3 months.
+    **ASSISTANT (PHASE 2: Final JQL Generation):**
+    project = SW AND created >= "-3M"
+
+    '''
 
     prompt = ChatPromptTemplate.from_messages([
+        # 1. The Core Instructions, Rules, and Few-Shot Examples
         ("system", system_prompt),
         
-        # --- NEW CONTEXT FLAG ---
-        ("system", f"Context Flag: history_exists={history_exists}"),
-
-        # --- JQL SYNTAX HINTS (Escaped Braces) ---
-        ("system", 
-         "**JQL SYNTAX HINTS:**\n"
-         "* Dates are relative: Use the JQL `resolutiondate >= startOfMonth{{}}()`, `resolutiondate >= '-3M'`, or similar syntax.\n"
-         "* 'Has solved' or 'resolved' implies using the `resolutiondate` field.\n"
-         "* If the project is not specified, use `project IN ('SW', 'LA')` as a default filter."
-        ),
+        # 2. The history of the current loop (Tool Call and Tool Result)
+        # This is how the LLM sees the output of its last action.
+        MessagesPlaceholder(variable_name="tool_history"), 
         
-        # --- FEW-SHOT EXAMPLES (Escaped Braces) ---
-        ("user", "Find issues solved by Alpha Team."),
-        ("assistant", "get_celula_dropdown_options{{}}()"),
-        ("user", "Tool Results: ['Alpha Team', 'Beta Team']"),
-        ("assistant", "project IN (SW, LA) AND resolution IS NOT EMPTY AND \"Celula[Dropdown]\" = 'Alpha Team'"),
-
-        ("user", "All bugs resolved this month in the new project."),
-        ("assistant", "get_all_projects{{}}() AND get_all_issue_types{{}}()"),
-        ("user", "Tool Results: [Projects: {{SW: 'Service Web'}}, Types: {{Bug, Task}}]"),
-        ("assistant", "project = SW AND issuetype = Bug AND resolutiondate >= startOfMonth{{}}()"),
-
-        # --- USER'S CURRENT QUERY ---
-        ("user", "{user_prompt}"),
-        ("assistant", "{tool_history}"),
+        # 3. The original request, always presented as the last human message.
+        ("user", "{user_prompt}"), 
     ])
 
     # 3. Create the runnable chain and invoke
@@ -124,8 +183,7 @@ def agent_node(state: JQLAnalysisState) -> JQLAnalysisState:
     # Note: Removed the retry logic for clarity, but keep it if rate limits are an issue.
     response = agent_runnable.invoke({
         "user_prompt": state["user_prompt"],
-        "tool_history": tool_history,
-        "history_exists": history_exists # Pass the flag to the runnable
+        "history_messages": history_messages,
     })
 
     # 4. Process the LLM's output (Decision Point)
@@ -222,3 +280,18 @@ workflow.add_edge("tools", "agent")
 
 # 6. Compile the graph
 reactive_jql_app = workflow.compile()
+
+
+def format_tool_history(tool_results: list, tool_calls: list) -> list:
+    history = []
+    # Loop through the executed tool calls and results, pairing them up
+    for tool_call in tool_calls:
+        # 1. Assistant's message that made the tool call
+        history.append(AIMessage(content="", tool_calls=[tool_call]))
+        
+        # Find the matching tool result
+        result = next((r for r in tool_results if r.tool_call_id == tool_call.id), None)
+        if result:
+            # 2. The tool's observation (The data the agent uses to decide the JQL)
+            history.append(ToolMessage(content=result.content, tool_call_id=tool_call.id))
+    return history

@@ -1,10 +1,11 @@
 import os
 from dotenv import load_dotenv
 from jira import JIRA, JIRAError
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from business_info import BusinessInfo
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz, process
+import unicodedata
 
 load_dotenv
 
@@ -412,6 +413,68 @@ class JiraClient:
         except Exception as e:
             print(f"Unexpected error retrieving field configurations: {e}")
             return []
+        
+
+    def get_users_id(self, query_names: List[str]) -> List[Dict]:
+        id_dict = []
+        
+        # Get all users
+        start_at = 0
+        max_results = 1000  # Increased to get more users
+        users = self.client.search_users(
+            query='.',
+            startAt=start_at,
+            maxResults=max_results
+        )
+        
+        user_list = [{"name": u.displayName, "id": u.accountId} for u in users]
+
+        # For each query name, find the best match
+        for query_name in query_names:
+            best_match = None
+            best_score = 0
+            
+            for user in user_list:
+                score = self.calculate_name_similarity(query_name, user["name"])
+                if score > best_score:
+                    best_score = score
+                    best_match = user
+            
+            if best_match and best_score > 0.6:  # Threshold for acceptable match
+                id_dict.append({
+                    "query_name": query_name,
+                    "matched_name": best_match["name"],
+                    "id": best_match["id"]
+                })
+        
+        return id_dict
+
+    def calculate_name_similarity(self, name1, name2):
+        # Normalize both names
+        norm1 = self.strip_accents(name1.lower())
+        norm2 = self.strip_accents(name2.lower())
+        
+        # Split into parts
+        parts1 = norm1.split()
+        parts2 = norm2.split()
+        
+        # Check if all parts of name1 are contained in name2
+        match_count = 0
+        for part in parts1:
+            if any(part in part2 or part2 in part for part2 in parts2):
+                match_count += 1
+        
+        # Calculate similarity score
+        return match_count / len(parts1)
+
+    @staticmethod
+    def strip_accents(text):
+        return ''.join(
+            c for c in unicodedata.normalize('NFKD', text)
+            if not unicodedata.combining(c)
+        )
+
+
 
 
         

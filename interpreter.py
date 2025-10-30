@@ -1,38 +1,83 @@
 import os
 from langgraph_setup import reactive_jql_app, JQLAnalysisState # Import your app and state
 from jira_client import JiraClient
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+
+load_dotenv()
+
+api_key = os.getenv("LLM_API_KEY")
+model = os.getenv("LLM_MODEL")
+
+  
+llm = ChatGoogleGenerativeAI(
+        model=model,
+        google_api_key=api_key,
+        temperature=0
+        )
+
+# Prompt template
+prompt = ChatPromptTemplate.from_template("""
+You are a Jira JQL generator. Convert the following natural language request into a valid Jira JQL query.
+
+Request: {request}
+JQL:
+""")
+
+parser = StrOutputParser()
+
+# Compose the chain: prompt | llm | parser
+jql_chain = prompt | llm | parser
+
+
+
 
 def main():
 
-    test_tools()
-#     # 1. Define the user query
-#     initial_prompt = "find all the issues of type 'Historia' in project 'Equipo SVA' that have been solved this month"
+    # test_tools()
+    # 1. Define the user query
+    # initial_prompt = "find all the issues of type 'Historia' in project 'Equipo SVA' that have been solved this month"
 
-#     # 2. Define the initial state
-#     initial_state: JQLAnalysisState = {
-#         "user_prompt": initial_prompt,
-#         "suggested_jql": None,
-#         "tool_calls": [],
-#         "tool_results": [],
-#         "validation_status": None,
-#         "final_jql": None
-#     }
+    # # 2. Define the initial state
+    # initial_state: JQLAnalysisState = {
+    #     "user_prompt": initial_prompt,
+    #     "suggested_jql": None,
+    #     "tool_calls": [],
+    #     "tool_results": [],
+    #     "validation_status": None,
+    #     "final_jql": None
+    # }
 
-#     print(f"--- Starting Agent for Prompt: {initial_prompt} ---")
+    # print(f"--- Starting Agent for Prompt: {initial_prompt} ---")
 
-#     # 3. Invoke the graph
-#     # The graph will run the loop (Agent -> Tools -> Agent) until it hits END.
-#     final_state = reactive_jql_app.invoke(initial_state)
+    # # 3. Invoke the graph
+    # # The graph will run the loop (Agent -> Tools -> Agent) until it hits END.
+    # final_state = reactive_jql_app.invoke(initial_state)
 
-#     # 4. Print the final result
-#     print("\n--- Execution Complete ---")
-#     print("Final Suggested JQL:")
-#     # The agent's final output will be stored here
-#     print(final_state.get('suggested_jql', 'JQL not generated.'))
+    # # 4. Print the final result
+    # print("\n--- Execution Complete ---")
+    # print("Final Suggested JQL:")
+    # # The agent's final output will be stored here
+    # print(final_state.get('suggested_jql', 'JQL not generated.'))
 
-#     print("\nHistory of Tool Calls and Results:")
-#     for result in final_state.get('tool_results', []):
-#         print(f"  - Tool Used: {result.tool_call_id} | Result: {result.content[:100]}...") # Truncate long results
+    # print("\nHistory of Tool Calls and Results:")
+    # for result in final_state.get('tool_results', []):
+    #     print(f"  - Tool Used: {result.tool_call_id} | Result: {result.content[:100]}...") # Truncate long results
+
+
+    
+    # user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of the month that belong to epic GOBI-895 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
+    # result = jql_chain.invoke({"request": user_input})
+    # print(result)
+
+    users = {"Agustín Goñi", "Edgar Benitez", "Luis Vila"}
+
+    jira_client = JiraClient()
+    list = jira_client.get_users_id(users)
+    print(list)
 
 
 def test_tools():

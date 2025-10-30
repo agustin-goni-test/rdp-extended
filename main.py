@@ -11,7 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 import asyncio
-from limiter import
+from limiter import RateLimitingRunnable
 
 load_dotenv()
 
