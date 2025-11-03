@@ -12,6 +12,7 @@ import json
 from dotenv import load_dotenv
 from jira_client import JiraClient
 
+
 load_dotenv()
 
 jira_client = JiraClient()

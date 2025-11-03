@@ -9,9 +9,11 @@ from business_info import BusinessInfo
 from output_manager import OutputManager, OutputRunnable
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel
 import asyncio
 from limiter import RateLimitingRunnable
+from enricher import JQLEnrichmentAgent
 
 load_dotenv()
 
@@ -58,6 +60,67 @@ def get_issue_list_info(filter) -> List[IssueInfo]:
     
     #Obtener los issues desde el filtro
     issues = jira_client.get_issues_from_filter(filter)
+    
+    # Capturar información de cada uno de los issues
+    info = jira_client.proccess_issue_list_info(issues)
+
+    return info
+
+
+
+def get_issue_list_info_llm(jql) -> List[IssueInfo]:
+    
+    jira_client = JiraClient()
+
+    # Obtener parámetros de configuración
+    model = os.getenv("LLM_MODEL", "gemini-2.5-flash")
+    api_key = os.getenv("LLM_API_KEY")
+
+    llm = ChatGoogleGenerativeAI(
+        model=model,
+        google_api_key=api_key,
+        temperature=0
+        )
+    
+    agent = JQLEnrichmentAgent(llm, jira_client)
+    
+    # Prompt template
+    prompt = ChatPromptTemplate.from_template("""
+    You are a Jira JQL generator. Convert the following natural language request into a valid Jira JQL query. Take certain things into consideration:
+    - the active sprint of a team can be obtained with the function openSprints() in JQL.
+    - be mindful of present and past tenses. For example, if required to provide issues concerning an assignee, separate the case in which the 
+    issue is assigned to that person ("assignee" in or "assignee =") to the case were it was once assigned ("assigne WAS")
+
+    Request: {request}
+    JQL:
+    """)
+
+    user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
+
+    parser = StrOutputParser()
+
+    # Compose the chain: prompt | llm | parser
+    jql_chain = prompt | llm | parser
+
+    expression = jql_chain.invoke({"request": user_input})
+
+    enriched_expression = agent.enrich(expression)
+
+    info = get_issue_list_info_from_jql(enriched_expression)
+
+    return info
+
+
+def get_issue_list_info_from_jql(jql) -> List[IssueInfo]:
+    '''
+    Método para obtener la información de los issues desde un filtro de Jira
+    '''
+
+    # Instanciar cliente Jira
+    jira_client = JiraClient()
+    
+    #Obtener los issues desde el filtro
+    issues = jira_client.get_issues_from_jql(jql)
     
     # Capturar información de cada uno de los issues
     info = jira_client.proccess_issue_list_info(issues)
