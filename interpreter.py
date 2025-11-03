@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from enricher import JQLEnrichmentAgent
 
 
 load_dotenv()
@@ -69,15 +70,22 @@ def main():
 
 
     
-    # user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of the month that belong to epic GOBI-895 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
-    # result = jql_chain.invoke({"request": user_input})
-    # print(result)
-
-    users = {"Agustín Goñi", "Edgar Benitez", "Luis Vila"}
+    user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of October 2025 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
+    result = jql_chain.invoke({"request": user_input})
+    print(f"Original JQL: ' {result} '")
 
     jira_client = JiraClient()
-    list = jira_client.get_users_id(users)
-    print(list)
+
+    agent = JQLEnrichmentAgent(llm, jira_client)
+
+    enriched = agent.enrich(result)
+    print(f"Enriched JQL: ' {enriched} '")
+
+    # users = {"Agustín Goñi", "Edgar Benitez", "Luis Vila"}
+
+    # jira_client = JiraClient()
+    # list = jira_client.get_users_id(users)
+    # print(list)
 
 
 def test_tools():
