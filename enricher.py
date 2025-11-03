@@ -123,6 +123,9 @@ class JQLEnrichmentAgent:
 
     def detect_and_extract(self, state:EnrichmentState) -> EnrichmentState:
         '''Do detection of condition and extraction at the same time'''
+
+        print("Entrando a estado detect_and_extract...")
+
         text = state["current_text"]
 
         chain = self.detection_extraction_prompt | self.llm
@@ -132,24 +135,28 @@ class JQLEnrichmentAgent:
             # Parse the combined result
             content = response.content
 
-            # Clean up the JSON response if it has extra characters
-            if '```json' in content:
-                start_index = content.find('```json') + 7
-                end_index = content.find('```', start_index)
-                json_str = content[start_index:end_index].strip()
+            # if content.startswith('JQL:'):
+            #     content = content[4:].strip()
 
-            elif '```' in content:
-                start_index = content.find('```') + 3
-                end_index = content.find('```', start_index)
-                json_str = content[start_index:end_index].strip()
+            # # Clean up the JSON response if it has extra characters
+            # if '```json' in content:
+            #     start_index = content.find('```json') + 7
+            #     end_index = content.find('```', start_index)
+            #     json_str = content[start_index:end_index].strip()
 
-            else:
-                json_str = content.strip()
+            # elif '```' in content:
+            #     start_index = content.find('```') + 3
+            #     end_index = content.find('```', start_index)
+            #     json_str = content[start_index:end_index].strip()
+
+            # else:
+            #     json_str = content.strip()
+
+            json_str = self._prepare_content_format(content)
 
             data = json.loads(json_str)
             state["detected_conditions"] = data["enrichments_needed"]
             state["tool_inputs"] = data["extracted_data"]
-
 
         except json.JSONDecodeError:
             print(f"JSON parsing failed. Content was: {response.content}")
@@ -160,6 +167,9 @@ class JQLEnrichmentAgent:
     
     def execute_tools(self, state: EnrichmentState) -> EnrichmentState:
         '''Execute the tools with the extracted data'''
+
+        print("Entrando a estado execute_tools...")
+
         tool_inputs = state["tool_inputs"]
         tool_results = {}
 
@@ -179,6 +189,9 @@ class JQLEnrichmentAgent:
 
     def merge_results(self, state: EnrichmentState) -> EnrichmentState:
         '''Incorporate the tool results'''
+
+        print("Entrando a estado merge_results...")
+
         text = state["current_text"]
         tool_results = state["tool_results"]
         detected_conditions = state["detected_conditions"].copy()  # Use a copy to make changes
@@ -198,6 +211,7 @@ class JQLEnrichmentAgent:
             if "user_lookup" in detected_conditions and user_id_map:
                 detected_conditions.remove("user_lookup")
 
+        text = self._clean_up_jql(text)
 
         state["current_text"] = text
         state["detected_conditions"] = detected_conditions  # Update with whatever was eliminated
@@ -227,12 +241,58 @@ class JQLEnrichmentAgent:
 
         return final_state["current_text"]
 
+
+    def _clean_up_jql(self, text: str) -> str:
+        
+        # Clean out the outpuut to make sure it's usable in a Jira filter
+        if text.startswith('```jql'):
+            text = text[7:]  # Remove '```jql' prefix (6 chars + newline)
+        elif text.startswith('`jql'):
+            text = text[5:]
+        elif text.startswith('`'):
+            text = text[1:]
+
+        if text.endswith('```'):
+            text = text[:-3]  # Remove '```' suffix
+        elif text.endswith('`'):
+            text = text[:-1]
+        text = text.strip()  # Remove any extra whitespace
+
+        return text
+    
+    
+    def _prepare_content_format(self, content: str) -> str:
+
+        if content.startswith('JQL:'):
+                content = content[4:].strip()
+
+        # Clean up the JSON response if it has extra characters
+        if '```json' in content:
+            start_index = content.find('```json') + 7
+            end_index = content.find('```', start_index)
+            json_str = content[start_index:end_index].strip()
+
+        elif '```' in content:
+            start_index = content.find('```') + 3
+            end_index = content.find('```', start_index)
+            json_str = content[start_index:end_index].strip()
+
+        else:
+            json_str = content.strip()
+
+        return json_str
+        
         
 
     def check_continuation(self, state: EnrichmentState) -> EnrichmentState:
         """Simple version - usually just one iteration for JQL enrichment"""
+
+        print("Entrando a estado check_continuation...")
+
         iteration = state.get("iteration", 0) + 1
         state["iteration"] = iteration
+
+        print(f"Fin de la iteración {iteration}...")
 
         # Consider two condition to stop
         # No tools needed and max number of iterations exceeded
@@ -240,6 +300,9 @@ class JQLEnrichmentAgent:
         under_max_iterations = iteration < self.max_iterations
 
         state["should_continue"] = conditions_detected and under_max_iterations
+
+        print(f"Condición de continuación para más iteraciones es {state["should_continue"]}")
+
         return state
 
 

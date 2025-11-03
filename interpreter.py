@@ -22,7 +22,10 @@ llm = ChatGoogleGenerativeAI(
 
 # Prompt template
 prompt = ChatPromptTemplate.from_template("""
-You are a Jira JQL generator. Convert the following natural language request into a valid Jira JQL query.
+You are a Jira JQL generator. Convert the following natural language request into a valid Jira JQL query. Take certain things into consideration:
+ - the active sprint of a team can be obtained with the function openSprints() in JQL.
+- be mindful of present and past tenses. For example, if required to provide issues concerning an assignee, separate the case in which the 
+issue is assigned to that person ("assignee" in or "assignee =") to the case were it was once assigned ("assigne WAS")
 
 Request: {request}
 JQL:
@@ -70,7 +73,10 @@ def main():
 
 
     
-    user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of October 2025 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
+    # user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of October 2025 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
+
+    user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
+
     result = jql_chain.invoke({"request": user_input})
     print(f"Original JQL: ' {result} '")
 
@@ -80,6 +86,11 @@ def main():
 
     enriched = agent.enrich(result)
     print(f"Enriched JQL: ' {enriched} '")
+
+    issues = jira_client.get_issues_from_jql(enriched)
+
+    for issue in issues:
+        print(issue.key)
 
     # users = {"Agustín Goñi", "Edgar Benitez", "Luis Vila"}
 

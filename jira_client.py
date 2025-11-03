@@ -112,6 +112,17 @@ class JiraClient:
         print(f"Found {len(issues)} issues.")
         return issues
     
+
+    def get_issues_from_jql(self, jql_expression: str):
+        '''Método para traer los issues usando una expresión JQL, a través de la API de Jira.
+        '''
+        # Buscar issues usando JQL
+        issues = self.client.search_issues(jql_expression, maxResults=False)
+
+        # Report and return issues
+        print(f"Found {len(issues)} issues.")
+        return issues
+    
     
     def proccess_issue_list_info(self, issues) -> List[IssueInfo]:
         '''Método para obtener la información de cada HU dentro de una lista.
