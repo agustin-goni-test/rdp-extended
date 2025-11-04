@@ -41,44 +41,11 @@ jql_chain = prompt | llm | parser
 
 
 def main():
-
-    # test_tools()
-    # 1. Define the user query
-    # initial_prompt = "find all the issues of type 'Historia' in project 'Equipo SVA' that have been solved this month"
-
-    # # 2. Define the initial state
-    # initial_state: JQLAnalysisState = {
-    #     "user_prompt": initial_prompt,
-    #     "suggested_jql": None,
-    #     "tool_calls": [],
-    #     "tool_results": [],
-    #     "validation_status": None,
-    #     "final_jql": None
-    # }
-
-    # print(f"--- Starting Agent for Prompt: {initial_prompt} ---")
-
-    # # 3. Invoke the graph
-    # # The graph will run the loop (Agent -> Tools -> Agent) until it hits END.
-    # final_state = reactive_jql_app.invoke(initial_state)
-
-    # # 4. Print the final result
-    # print("\n--- Execution Complete ---")
-    # print("Final Suggested JQL:")
-    # # The agent's final output will be stored here
-    # print(final_state.get('suggested_jql', 'JQL not generated.'))
-
-    # print("\nHistory of Tool Calls and Results:")
-    # for result in final_state.get('tool_results', []):
-    #     print(f"  - Tool Used: {result.tool_call_id} | Result: {result.content[:100]}...") # Truncate long results
-
-
     
     # user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of October 2025 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
 
     # user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
-    user_input = "give me all issues of type Incidente in from teams Clientes, Afiliación y Contratos, Web Privada or Web Publica that have been resolved this year"
-
+    user_input = "give me all issues of type Incidente in from teams Clientes, Afiliación y Contratos, Web Privada or Web Publica that have been solved or created this year"
 
     result = jql_chain.invoke({"request": user_input})
     print(f"Original JQL: ' {result} '")
@@ -95,11 +62,6 @@ def main():
     for issue in issues:
         print(issue.key)
 
-    # users = {"Agustín Goñi", "Edgar Benitez", "Luis Vila"}
-
-    # jira_client = JiraClient()
-    # list = jira_client.get_users_id(users)
-    # print(list)
 
 
 def test_tools():

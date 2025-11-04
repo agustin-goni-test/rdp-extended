@@ -77,23 +77,6 @@ class JQLEnrichmentAgent:
              '''),
              ("human", "JQL: {text}")
              ])
-        
-        # self.input_extraction_prompt = ChatPromptTemplate.from_messages([
-        #     ("system", '''
-        #         Extract the specific parts of the input expression that are relevant for the {tool_name} tool. Focus only on the
-        #      portion you need for processing by this specific tool. Return only the necessary information, without additional comments.
-        #      '''),
-        #      ("human", "JQL expression: {text}")
-        # ])
-
-        # self.input_extraction_prompt = ChatPromptTemplate.from_messages([
-        #     ("system", '''
-        #         Extract the names of the users included in the input JQL expression
-             
-        #      Return a JSON array of the names and nothing more. Name that array "names_included".
-        #      '''),
-        #      ("human", "JQL expression: {text}")
-        # ])
 
         # Build the graph
         self.graph = self._build_graph()
@@ -138,25 +121,10 @@ class JQLEnrichmentAgent:
             # Parse the combined result
             content = response.content
 
-            # if content.startswith('JQL:'):
-            #     content = content[4:].strip()
-
-            # # Clean up the JSON response if it has extra characters
-            # if '```json' in content:
-            #     start_index = content.find('```json') + 7
-            #     end_index = content.find('```', start_index)
-            #     json_str = content[start_index:end_index].strip()
-
-            # elif '```' in content:
-            #     start_index = content.find('```') + 3
-            #     end_index = content.find('```', start_index)
-            #     json_str = content[start_index:end_index].strip()
-
-            # else:
-            #     json_str = content.strip()
-
+            # Adjust input format to provide a clean version
             json_str = self._prepare_content_format(content)
 
+            # Obtain output, including detected conditions and tool inputs
             data = json.loads(json_str)
             state["detected_conditions"] = data["enrichments_needed"]
             state["tool_inputs"] = data["extracted_data"]
@@ -246,6 +214,7 @@ class JQLEnrichmentAgent:
 
 
     def _clean_up_jql(self, text: str) -> str:
+        '''Method to clean the output and make it "executable" '''
         
         # Clean out the outpuut to make sure it's usable in a Jira filter
         if text.startswith('```jql'):
@@ -265,6 +234,7 @@ class JQLEnrichmentAgent:
     
     
     def _prepare_content_format(self, content: str) -> str:
+        '''Method to clean the input before processing'''
 
         if content.startswith('JQL:'):
                 content = content[4:].strip()
@@ -307,9 +277,6 @@ class JQLEnrichmentAgent:
         self.logger.info(f"Condición de continuación para más iteraciones es {state["should_continue"]}")
 
         return state
-
-
-
 
 
     def detect_conditions(self, state: EnrichmentState) -> EnrichmentState:
