@@ -34,7 +34,7 @@ def main():
     logger.info("Comenzando proceso...")
     
     # Expresión en lenguaje natural de entrada para obtener los issues
-    user_input = "give me all issues of type Historia or Componente Técnico in project Equipo SVA that were solved between October 1 and October 31 of 2025 and were once assigned to Edgar Benitez, Luis Vila or Alexis Apablaza"
+    user_input = "give me all issues of type Historia or Componente Técnico in project Equipo SVA that were solved between October 1 and October 31 of 2025, in status Finalizado and were once assigned to Edgar Benitez, Luis Vila or Alexis Apablaza"
 
     start_time = datetime.now()
 
@@ -110,6 +110,7 @@ def get_issue_list_info_llm(user_input) -> List[IssueInfo]:
     - the active sprint of a team can be obtained with the function openSprints() in JQL.
     - be mindful of present and past tenses. For example, if required to provide issues concerning an assignee, separate the case in which the 
     issue is assigned to that person ("assignee" in or "assignee =") to the case were it was once assigned ("assigne WAS")
+    - if the prompt mentions a team, as in "team Clientes" or "cell APM", it refers to a Jira field called "Celula[Dropdown]", so an expression like 'team Adquirencia' becomes ' Celula[Dropdown] = "Adquirencia" '
 
     Request: {request}
     JQL:
@@ -264,9 +265,8 @@ async def create_output_table_async(issues: List[IssueInfo]) -> None:
         logger.info("Iniciando ejecución asíncrona del proceso...")
         results = await chain.abatch(inputs, max_concurrency=5)
 
-
     except Exception as e:
-        logger.error(f"Error al procesar el issue {issue.key}: {e}")
+        logger.error(f"Error al procesar el issue: {e}")
     
     logger.info("Guardando archivo de salida...")
     output_manager.save_table_to_csv("output_table.csv")

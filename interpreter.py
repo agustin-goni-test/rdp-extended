@@ -26,6 +26,7 @@ You are a Jira JQL generator. Convert the following natural language request int
  - the active sprint of a team can be obtained with the function openSprints() in JQL.
 - be mindful of present and past tenses. For example, if required to provide issues concerning an assignee, separate the case in which the 
 issue is assigned to that person ("assignee" in or "assignee =") to the case were it was once assigned ("assigne WAS")
+- if the prompt mentions a team, as in "team Clientes" or "cell APM", it refers to a Jira field called "Celula[Dropdown]", so an expression like 'team Adquirencia' becomes ' Celula[Dropdown] = "Adquirencia" ' 
 
 Request: {request}
 JQL:
@@ -75,7 +76,9 @@ def main():
     
     # user_input = "give me all the issues of type 'Historia' or 'Componente Técnico' in project Equipo SVA that have been solved since the beginning of October 2025 and were assigned to either Edgar Benitez or Luis Vila. Order them by date of resolution"
 
-    user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
+    # user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
+    user_input = "give me all issues of type Incidente in from teams Clientes, Afiliación y Contratos, Web Privada or Web Publica that have been resolved this year"
+
 
     result = jql_chain.invoke({"request": user_input})
     print(f"Original JQL: ' {result} '")

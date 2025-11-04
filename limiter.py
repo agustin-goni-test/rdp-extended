@@ -38,7 +38,7 @@ class LangChainRateLimiter:
             time_to_wait = SECONDS_PER_REQUEST - time_elapsed
 
             if time_to_wait > 0:
-                logger.info(f"RATE LIMITER: Esperando {time_to_wait:.2f} antes de la siguiente llamada...")
+                logger.info(f"RATE LIMITER: Esperando {time_to_wait:.2f} segundos antes de la siguiente llamada...")
                 await asyncio.sleep(time_to_wait)
 
             # Actualizar el tiempo antes de soltar la llamada
