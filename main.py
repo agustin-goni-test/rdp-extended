@@ -12,8 +12,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import StrOutputParser
 from pydantic import BaseModel
 import asyncio
+import logging
 from limiter import RateLimitingRunnable
 from enricher import JQLEnrichmentAgent
+from logger import Logger
 
 load_dotenv()
 
@@ -28,33 +30,44 @@ RATE_LIMITING = True if os.getenv("RATE_LIMITING") == "true" else False
 def main():
     print("Everything OK!")
 
+    logger = Logger()
+    logger.info("Comenzando proceso...")
+    
+    # Expresión en lenguaje natural de entrada para obtener los issues
+    user_input = "give me all issues of type Historia or Componente Técnico in project Equipo SVA that were solved between October 1 and October 31 of 2025 and were once assigned to Edgar Benitez, Luis Vila or Alexis Apablaza"
+
     start_time = datetime.now()
 
     # Leer filtro según el código pre definido
     filter = os.getenv("JIRA_FILTER_ID")
 
     # Buscar información de los issues del filtro
-    issues_info = get_issue_list_info(filter)
+    # issues_info = get_issue_list_info(filter)
+    logger.info("Obteniendo issues a través del LLM...")
+    issues_info = get_issue_list_info_llm(user_input)
 
     # Generar la salida, pudiendo ser de forma síncrona o asíncrona
+    logger.info("Crear tabla de salida...")
     if EXECUTION == "asynch":
         print("Ejecutaremos en forma ASÍNCRONA...")
         asyncio.run(create_output_table_async(issues_info))
     else:
         create_output_table(issues_info)
 
+    # Medir tiempo de ejecución total
     finish_time = datetime.now()
-
-    elapsed_time = (finish_time - start_time).total_seconds() / 60
+    total_seconds = (finish_time - start_time).total_seconds()
+    elapsed_minutes = int(total_seconds // 60)
+    elapsed_seconds = int(total_seconds % 60)
  
-    print(f"Proceso terminado en {elapsed_time}")
+    print(f"Proceso terminado en {elapsed_minutes} minutos y {elapsed_seconds} segundos")
+    logger.info(f"Proceso terminado en {elapsed_minutes} minutos y {elapsed_seconds} segundos")
 
 
 def get_issue_list_info(filter) -> List[IssueInfo]:
     '''
     Método para obtener la información de los issues desde un filtro de Jira
     '''
-
     # Instanciar cliente Jira
     jira_client = JiraClient()
     
@@ -68,20 +81,27 @@ def get_issue_list_info(filter) -> List[IssueInfo]:
 
 
 
-def get_issue_list_info_llm(jql) -> List[IssueInfo]:
+def get_issue_list_info_llm(user_input) -> List[IssueInfo]:
+    '''Método para obtener información de issues a partir de una expresión en lenguaje
+    natural.
     
+    Implementa un grafo de enriquecimiento para manipular la salida JQL'''
+    
+    # Crear cliente de Jira
     jira_client = JiraClient()
 
     # Obtener parámetros de configuración
     model = os.getenv("LLM_MODEL", "gemini-2.5-flash")
     api_key = os.getenv("LLM_API_KEY")
 
+    # Crear handler de LLM
     llm = ChatGoogleGenerativeAI(
         model=model,
         google_api_key=api_key,
         temperature=0
         )
     
+    # Crear agente de enriquecimiento de JQL
     agent = JQLEnrichmentAgent(llm, jira_client)
     
     # Prompt template
@@ -95,21 +115,24 @@ def get_issue_list_info_llm(jql) -> List[IssueInfo]:
     JQL:
     """)
 
-    user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
+    # user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
 
+    # Instanciar parser de salida para la expresión
     parser = StrOutputParser()
 
-    # Compose the chain: prompt | llm | parser
+    # Componer la cadena: prompt | llm | parser
     jql_chain = prompt | llm | parser
 
+    # Generar expresión cruda de SQL
     expression = jql_chain.invoke({"request": user_input})
 
+    # Enriquecer expresión de SQL
     enriched_expression = agent.enrich(expression)
 
+    # Obtener información de los issues relacionados
     info = get_issue_list_info_from_jql(enriched_expression)
 
     return info
-
 
 def get_issue_list_info_from_jql(jql) -> List[IssueInfo]:
     '''
@@ -167,6 +190,8 @@ async def create_output_table_async(issues: List[IssueInfo]) -> None:
     Método que hace el procesamiento de la información.
     
     Recibe una lista de información de issues. Genera la cadena de consulta y salida.'''
+    logger = Logger()
+    logger.info("Comenzando a construir la tabla de salida en versión ASÍNCRONA...")
 
     # Obtener la instancia del OutputManager
     output_manager = OutputManager()
@@ -218,7 +243,7 @@ async def create_output_table_async(issues: List[IssueInfo]) -> None:
         chain = prompt | structured_llm | output_runnable
     else:
         # Incorpora el limitador para esperar por cada llamada
-        print("Usaremos un limitador de llamadas para no exceder la tasa permitida...")
+        logger.info("Usaremos un limitador de llamadas para no exceder la tasa permitida...")
         chain = prompt | RateLimitingRunnable() | structured_llm | output_runnable
 
     # Introduciremos ejecución asincrónica
@@ -235,13 +260,14 @@ async def create_output_table_async(issues: List[IssueInfo]) -> None:
     ]
 
     try:
-        print("Iniciando ejecución asíncrona del proceso...")
+        logger.info("Iniciando ejecución asíncrona del proceso...")
         results = await chain.abatch(inputs, max_concurrency=5)
 
 
     except Exception as e:
-        print(f"Error al procesar el issue {issue.key}: {e}")
+        logger.error(f"Error al procesar el issue {issue.key}: {e}")
     
+    logger.info("Guardando archivo de salida...")
     output_manager.save_table_to_csv("output_table.csv")
 
 
@@ -250,6 +276,8 @@ def create_output_table(issues: List[IssueInfo]) -> None:
     Método que hace el procesamiento de la información.
     
     Recibe una lista de información de issues. Genera la cadena de consulta y salida.'''
+    logger = Logger()
+    logger.info("Comenzando a construir la tabla de salida en versión SÍNCRONA...")
 
     # Obtener la instancia del OutputManager
     output_manager = OutputManager()
@@ -300,7 +328,7 @@ def create_output_table(issues: List[IssueInfo]) -> None:
     chain = prompt | structured_llm | output_runnable
 
     for issue in issues:
-        print(f"Procesando issue {issue.key} para tabla de salida...")
+        logger.info(f"Procesando issue {issue.key} para tabla de salida...")
 
         # Crear la estructura de entrada, con los parámetros que espera el prompt
         issue_data = {
@@ -315,15 +343,17 @@ def create_output_table(issues: List[IssueInfo]) -> None:
         try:
             # Invocar la cadena. Esto genera la ejecución del RunnableSequence. En este caso,
             # el prompt que entra en el LLM con estructura
+            logger.info("Ejecutando cadena de consulta...")
             result = chain.invoke(issue_data)
             if result:
-                print(f"Completado el ciclo para HU: {issue.key}...")
+                logger.info(f"Completado el ciclo para HU: {issue.key}...")
 
 
         except Exception as e:
-            print(f"Error al procesar el issue {issue.key}: {e}")
+            logger.error(f"Error al procesar el issue {issue.key}: {e}")
             continue
     
+    logger.info("Guardando archivo de salida...")
     output_manager.save_table_to_csv("output_table.csv")
 
 
