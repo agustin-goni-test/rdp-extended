@@ -11,7 +11,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import json
 from dotenv import load_dotenv
 from jira_client import JiraClient
-
+from logger import Logger
 
 load_dotenv()
 
@@ -49,6 +49,7 @@ class JQLEnrichmentAgent:
         self.llm = llm
         self.jira_client = jira_client
         self.max_iterations = max_iterations
+        self.logger = Logger()
 
         # Define tools
         self.tools = [obtain_user_id]
@@ -100,6 +101,7 @@ class JQLEnrichmentAgent:
 
     def _build_graph(self) -> StateGraph:
         '''Build the graph needed for the execution'''
+        self.logger.info("Generando el grafo para la expresión JQL...")
         workflow = StateGraph(EnrichmentState)
 
         # Add the nodes
@@ -125,7 +127,7 @@ class JQLEnrichmentAgent:
     def detect_and_extract(self, state:EnrichmentState) -> EnrichmentState:
         '''Do detection of condition and extraction at the same time'''
 
-        print("Entrando a estado detect_and_extract...")
+        self.logger.info("Entrando a estado detect_and_extract...")
 
         text = state["current_text"]
 
@@ -160,7 +162,7 @@ class JQLEnrichmentAgent:
             state["tool_inputs"] = data["extracted_data"]
 
         except json.JSONDecodeError:
-            print(f"JSON parsing failed. Content was: {response.content}")
+            self.logger.error(f"JSON parsing failed. Content was: {response.content}")
             state["detected_conditions"] = []
             state["tool_inputs"] = {}
 
@@ -169,7 +171,7 @@ class JQLEnrichmentAgent:
     def execute_tools(self, state: EnrichmentState) -> EnrichmentState:
         '''Execute the tools with the extracted data'''
 
-        print("Entrando a estado execute_tools...")
+        self.logger.info("Entrando a estado execute_tools...")
 
         tool_inputs = state["tool_inputs"]
         tool_results = {}
@@ -191,7 +193,7 @@ class JQLEnrichmentAgent:
     def merge_results(self, state: EnrichmentState) -> EnrichmentState:
         '''Incorporate the tool results'''
 
-        print("Entrando a estado merge_results...")
+        self.logger.info("Entrando a estado merge_results...")
 
         text = state["current_text"]
         tool_results = state["tool_results"]
@@ -288,12 +290,12 @@ class JQLEnrichmentAgent:
     def check_continuation(self, state: EnrichmentState) -> EnrichmentState:
         """Simple version - usually just one iteration for JQL enrichment"""
 
-        print("Entrando a estado check_continuation...")
+        self.logger.info("Entrando a estado check_continuation...")
 
         iteration = state.get("iteration", 0) + 1
         state["iteration"] = iteration
 
-        print(f"Fin de la iteración {iteration}...")
+        self.logger.info(f"Fin de la iteración {iteration}...")
 
         # Consider two condition to stop
         # No tools needed and max number of iterations exceeded
@@ -302,7 +304,7 @@ class JQLEnrichmentAgent:
 
         state["should_continue"] = conditions_detected and under_max_iterations
 
-        print(f"Condición de continuación para más iteraciones es {state["should_continue"]}")
+        self.logger.info(f"Condición de continuación para más iteraciones es {state["should_continue"]}")
 
         return state
 

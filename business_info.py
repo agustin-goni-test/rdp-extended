@@ -17,7 +17,7 @@ class BusinessInfo:
     def _init_business_info(self):
         self._info_folder = os.getenv("BUSINESS_INFO_FOLDER", "sources")
 
-        print(f"Información del negocio para obtener desde: {self._info_folder}")
+        # print (f"Información del negocio para obtener desde: {self._info_folder}")
 
 
     def get_business_info(self, filename: str) -> str:

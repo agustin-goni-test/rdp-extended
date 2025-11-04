@@ -6,7 +6,7 @@ from business_info import BusinessInfo
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz, process
 import unicodedata
-
+from logger import Logger
 
 load_dotenv
 
@@ -97,6 +97,7 @@ class JiraClient:
         token = os.getenv("JIRA_API_TOKEN")
         options = {"server": server}
         self.client = JIRA(options, basic_auth=(user, token))
+        self.logger = Logger()
 
 
     def get_issues_from_filter(self, filter_id):
@@ -110,7 +111,7 @@ class JiraClient:
         issues = self.client.search_issues(f"filter={filter_id}", maxResults=False)
         
         # Informar y retonar issues
-        print(f"Found {len(issues)} issues.")
+        self.logger.info(f"Encontramos {len(issues)} issues.")
         return issues
     
 
@@ -121,7 +122,7 @@ class JiraClient:
         issues = self.client.search_issues(jql_expression, maxResults=False)
 
         # Report and return issues
-        print(f"Found {len(issues)} issues.")
+        self.logger.info(f"Encontramos {len(issues)} issues.")
         return issues
     
     
@@ -172,6 +173,7 @@ class JiraClient:
             # Si no ha sido leído
             if not exists:
                 # Leer el archivo desde Jira y asignar a la info de negocios
+                self.logger.info(f"Buscaremos la información de negocios para {epic_key}")
                 info = self.get_epic_info(epic_key)
                 
                 # Agregar a la lista de contextos de negocios ya encontrados, para no tener
@@ -180,6 +182,7 @@ class JiraClient:
 
             else:
                 # Obtener del contexto ya cargado para esta épica
+                self.logger.info(f"Ya teníamos la información de negocios para {epic_key}")
                 info = business_info.get_epic_from_list(epic_key)
 
         # Retornar la clase con todos los detalles, incluyendo el contexto de negocios
@@ -209,7 +212,7 @@ class JiraClient:
                 # Si el nombre del archivo buscado corresponde al attachment, leerlo
                 if filename.lower() in attachment.filename.lower():
                     file_content = attachment.get()
-                    print(f"Detalles de la iniciativa de negocios encontrados en {epic_key}")
+                    self.logger.info(f"Detalles de la iniciativa de negocios encontrados en {epic_key}")
                     return file_content.decode('utf-8')
                 
             return f"Archivo de información de negocio {filename} no encontrado"

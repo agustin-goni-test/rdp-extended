@@ -49,7 +49,7 @@ def main():
     # Generar la salida, pudiendo ser de forma síncrona o asíncrona
     logger.info("Crear tabla de salida...")
     if EXECUTION == "asynch":
-        print("Ejecutaremos en forma ASÍNCRONA...")
+        logger.info("Ejecutaremos en forma ASÍNCRONA...")
         asyncio.run(create_output_table_async(issues_info))
     else:
         create_output_table(issues_info)
@@ -60,7 +60,6 @@ def main():
     elapsed_minutes = int(total_seconds // 60)
     elapsed_seconds = int(total_seconds % 60)
  
-    print(f"Proceso terminado en {elapsed_minutes} minutos y {elapsed_seconds} segundos")
     logger.info(f"Proceso terminado en {elapsed_minutes} minutos y {elapsed_seconds} segundos")
 
 
@@ -87,8 +86,9 @@ def get_issue_list_info_llm(user_input) -> List[IssueInfo]:
     
     Implementa un grafo de enriquecimiento para manipular la salida JQL'''
     
-    # Crear cliente de Jira
+    # Crear cliente de Jira y logger
     jira_client = JiraClient()
+    logger = Logger()
 
     # Obtener parámetros de configuración
     model = os.getenv("LLM_MODEL", "gemini-2.5-flash")
@@ -128,6 +128,7 @@ def get_issue_list_info_llm(user_input) -> List[IssueInfo]:
 
     # Enriquecer expresión de SQL
     enriched_expression = agent.enrich(expression)
+    logger.info(f"Expresión JQL a usar: {enriched_expression}")
 
     # Obtener información de los issues relacionados
     info = get_issue_list_info_from_jql(enriched_expression)

@@ -4,8 +4,10 @@ from typing import ClassVar, Any
 from langchain_core.runnables import Runnable, RunnableConfig
 from dotenv import load_dotenv
 import os
+from logger import Logger
 
 load_dotenv()
+logger = Logger()
 
 REQUESTS_PER_MINUTE = os.getenv("REQUESTS_PER_MINUTE", 10)
 SECONDS_PER_REQUEST = 60 / int(REQUESTS_PER_MINUTE)
@@ -36,7 +38,7 @@ class LangChainRateLimiter:
             time_to_wait = SECONDS_PER_REQUEST - time_elapsed
 
             if time_to_wait > 0:
-                print(f"RATE LIMITER: Esperando {time_to_wait:.2f} antes de la siguiente llamada...")
+                logger.info(f"RATE LIMITER: Esperando {time_to_wait:.2f} antes de la siguiente llamada...")
                 await asyncio.sleep(time_to_wait)
 
             # Actualizar el tiempo antes de soltar la llamada
