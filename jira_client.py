@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from rapidfuzz import fuzz, process
 import unicodedata
 
+
 load_dotenv
 
 class IssueInfo:

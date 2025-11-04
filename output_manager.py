@@ -7,6 +7,7 @@ import pandas as pd
 from langchain_core.runnables import Runnable
 from jira_client import IssueAnalysis
 from datetime import datetime
+from logger import Logger
 
 load_dotenv()
 
@@ -20,6 +21,7 @@ class OutputManager:
         return cls._instance
     
     def _init_manager(self):
+        self.logger = Logger()
         # Configurar directorio de salida desde variable de entorno
         self.output_dir = os.getenv("OUTPUT_DIR", "outputs")
         
@@ -32,7 +34,7 @@ class OutputManager:
         self.data = pd.DataFrame(columns=self.headers)
 
         # Informar de la ruta de salida
-        print(f"Output directory set to: {self.output_dir}")
+        self.logger.info(f"Directorio de salida: {self.output_dir}")
 
     def save_output_to_text(self, filename: str, content: str) -> None:
         '''
@@ -51,7 +53,7 @@ class OutputManager:
             f.write(content)
 
         # Informar al usuario
-        print(f"Output saved to {file_path}")
+        self.logger(f"Archivo de salida grabado en {file_path}")
 
     
     def create_visual_output(self, key, metrics_data) -> None:
@@ -187,16 +189,17 @@ class OutputManager:
         self.data.to_csv(file_path, index=False, encoding='utf-8-sig')
 
         # Informar al usuario
-        print(f"Output table saved to {file_path}")
+        self.logger(f"Tabla guardada en {file_path}")
 
 
 class OutputRunnable(Runnable):
     def __init__(self, output_manager):
         self.output_manager = output_manager
+        self.logger = Logger()
 
     def invoke(self, result, config=None):
 
-        print(f"Generando salida para issue {result.issue_key}")
+        self.logger.info(f"Generando salida para issue {result.issue_key}")
         execution = os.getenv("EXECUTION", "asynch")
 
         # issue_key = config.get("issue_key") if config else "unknown"

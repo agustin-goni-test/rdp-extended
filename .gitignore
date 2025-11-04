@@ -1,9 +1,5 @@
 .env
 outputs/*
-<<<<<<< Updated upstream
 sources/*
-=======
-sources/*
+log/*
 backup/*
-outputs.*
->>>>>>> Stashed changes
