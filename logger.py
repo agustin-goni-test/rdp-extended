@@ -5,9 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Config parameters
 LOG_DIR = os.getenv("LOG_DIR", "log")
 LEVEL = logging.DEBUG if os.getenv("DEBUG") == "true" else logging.INFO
 
+# Logger class, singleton implementation
 class Logger:
     _instance = None
 

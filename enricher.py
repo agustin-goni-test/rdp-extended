@@ -83,7 +83,7 @@ class JQLEnrichmentAgent:
 
 
     def _build_graph(self) -> StateGraph:
-        '''Build the graph needed for the execution'''
+        '''Construir el grafo para la ejecución'''
         self.logger.info("Generando el grafo para la expresión JQL...")
         workflow = StateGraph(EnrichmentState)
 
@@ -108,23 +108,27 @@ class JQLEnrichmentAgent:
 
 
     def detect_and_extract(self, state:EnrichmentState) -> EnrichmentState:
-        '''Do detection of condition and extraction at the same time'''
+        '''Detectar condiciones y hacer extracción al mismo tiempo'''
 
         self.logger.info("Entrando a estado detect_and_extract...")
 
+        # Obtener la versión actual del texto (JQL)
         text = state["current_text"]
 
+        # Usar LLM para detectar la necesidad de herramientas
         chain = self.detection_extraction_prompt | self.llm
         response = chain.invoke({"text": text})
 
         try:
-            # Parse the combined result
+            # Parsear los resultados
             content = response.content
 
             # Adjust input format to provide a clean version
             json_str = self._prepare_content_format(content)
 
-            # Obtain output, including detected conditions and tool inputs
+            # Obtener los parámetros relacionados a las herramientas.
+            # detected_conditions viene de la sección enrichments_needed de la respuesta ("requiere herramientas")
+            # tool_inputs viene de extracted_data ("datos que cada herramienta requiere")
             data = json.loads(json_str)
             state["detected_conditions"] = data["enrichments_needed"]
             state["tool_inputs"] = data["extracted_data"]
@@ -137,65 +141,79 @@ class JQLEnrichmentAgent:
         return state
     
     def execute_tools(self, state: EnrichmentState) -> EnrichmentState:
-        '''Execute the tools with the extracted data'''
+        '''Ejecutar las herramientas con los datos extraídos'''
 
         self.logger.info("Entrando a estado execute_tools...")
 
+        # Obtener los parámetros relacionados a la herramientas
         tool_inputs = state["tool_inputs"]
         tool_results = {}
 
-        # Handle the case for each tool
+        # Manejar el caso de cada herramienta por separado
+        # Partir por los usuarios
         if "user_lookup" in tool_inputs:
-            # Obtain the list of names
+            # Obtain la lista de nombres de usuarios e buscar los id
+            # Asignar a los resultados bajo el mismo nombre (user_lookup)
             usernames = tool_inputs["user_lookup"]
             results = obtain_user_id.invoke({"usernames": usernames})
             tool_results["user_lookup"] = results
 
+        # Usar para épicas (por implementar)
         if "epic_lookup" in tool_results:
             pass
 
+        # Recuperar los resultados como parte del estado
         state["tool_results"] = tool_results
         return state
     
 
     def merge_results(self, state: EnrichmentState) -> EnrichmentState:
-        '''Incorporate the tool results'''
+        '''Incorporar los resultados a la expresión JQL'''
 
         self.logger.info("Entrando a estado merge_results...")
 
+        # Obtener la expresión actual y los resultados de herramintas
         text = state["current_text"]
         tool_results = state["tool_results"]
-        detected_conditions = state["detected_conditions"].copy()  # Use a copy to make changes
 
+        # Usar una copia de las condiciones detectadas, para poder ir borrándolas
+        detected_conditions = state["detected_conditions"].copy() 
+
+        # Recorrer todas las condiciones
         if "user_lookup" in tool_results:
             user_id_map = tool_results["user_lookup"]
 
-            # Replace name with id, reagarless of whether quotation marks are present
+            # Reemplazar con id, ya sea que el nombre venga con o sin comillas
             for username, user_id in user_id_map.items():
-                # Replace quoted version
+                # Reemplazar versión con comillas
                 text = text.replace(f'"{username}"', user_id)
-                # Replace unquoted version
+                # Reemplazar versión sin comillas
                 text = text.replace(username, user_id)
             
-            # If this was one of the conditions detected and the id map exists
-            # Then this condition will be deleted to avoid iterations
+            # Si fue una de las condiciones detectadas y el map de los ids existe
+            # borrar la condición de la lista original, para no volver a usar la herramienta
+            # en iteraciones futuras
             if "user_lookup" in detected_conditions and user_id_map:
                 detected_conditions.remove("user_lookup")
 
+        # Limpiar la salida
         text = self._clean_up_jql(text)
 
+        # Actualizar parámetros del estado
         state["current_text"] = text
-        state["detected_conditions"] = detected_conditions  # Update with whatever was eliminated
+        state["detected_conditions"] = detected_conditions  # La versión que tiene eliminaciones
         return state
     
 
     def should_continue_logic(self, state: EnrichmentState) -> EnrichmentState:
-        '''Determine if the workflow must continue'''
+        '''Determinar si el workflow requiere otra iteración'''
         return "continue" if state.get("should_continue", False) else "end"
     
 
     def enrich(self, jql_text: str) -> str:
-        """Main method to enrich JQL"""
+        """Método para enriquecer el JQL"""
+        
+        # Crear estado inicial del workflow
         initial_state = {
             "original_text": jql_text,
             "current_text": jql_text,
@@ -208,15 +226,16 @@ class JQLEnrichmentAgent:
             "should_continue": True
         }
 
+        # Buscar estado final (ejecutar grafo)
         final_state = self.graph.invoke(initial_state)
 
         return final_state["current_text"]
 
 
     def _clean_up_jql(self, text: str) -> str:
-        '''Method to clean the output and make it "executable" '''
+        '''Metodo para limpiar la salida y hacerla "ejecutable" '''
         
-        # Clean out the outpuut to make sure it's usable in a Jira filter
+        # Limpiar la salida según su formato (puede venir de distintas formas)
         if text.startswith('```jql'):
             text = text[7:]  # Remove '```jql' prefix (6 chars + newline)
         elif text.startswith('`jql'):
@@ -234,12 +253,12 @@ class JQLEnrichmentAgent:
     
     
     def _prepare_content_format(self, content: str) -> str:
-        '''Method to clean the input before processing'''
+        '''Método para limpiar la entrada antes de procesarla'''
 
         if content.startswith('JQL:'):
                 content = content[4:].strip()
 
-        # Clean up the JSON response if it has extra characters
+        # Limpiar el JSON si viene con caractéres adicionales
         if '```json' in content:
             start_index = content.find('```json') + 7
             end_index = content.find('```', start_index)

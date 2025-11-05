@@ -10,10 +10,11 @@ from enricher import JQLEnrichmentAgent
 
 load_dotenv()
 
+# Config params
 api_key = os.getenv("LLM_API_KEY")
 model = os.getenv("LLM_MODEL")
 
-  
+# LLM basado en modelos de Gemini
 llm = ChatGoogleGenerativeAI(
         model=model,
         google_api_key=api_key,
@@ -32,6 +33,7 @@ Request: {request}
 JQL:
 """)
 
+# Crear parser para la salida
 parser = StrOutputParser()
 
 # Compose the chain: prompt | llm | parser
@@ -47,21 +49,21 @@ def main():
     # user_input = "give me all issues of type Historia in project Equipo SVA that belong to the current active sprint and were once assigned to Edgar Benitez"
     user_input = "give me all issues of type Incidente in from teams Clientes, Afiliación y Contratos, Web Privada or Web Publica that have been solved or created this year"
 
+    # Invocar cadena para obtener la expresión JQL cruda
     result = jql_chain.invoke({"request": user_input})
     print(f"Original JQL: ' {result} '")
 
     jira_client = JiraClient()
 
+    # Crear agente para enriquecimiento de JQL e invocar. Usa herramientas
     agent = JQLEnrichmentAgent(llm, jira_client)
-
     enriched = agent.enrich(result)
     print(f"Enriched JQL: ' {enriched} '")
 
+    # Mostrar los issues de resultado
     issues = jira_client.get_issues_from_jql(enriched)
-
     for issue in issues:
         print(issue.key)
-
 
 
 def test_tools():
